@@ -1,0 +1,58 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Add Android platform
+        run: |
+          if [ ! -d android ]; then npx cap add android; fi
+
+      - name: Sync web assets and plugins
+        run: npx cap sync android
+
+      - name: Add notification permissions
+        run: |
+          MF=android/app/src/main/AndroidManifest.xml
+          for P in POST_NOTIFICATIONS SCHEDULE_EXACT_ALARM; do
+            if ! grep -q "android.permission.$P" "$MF"; then
+              sed -i "s#<application#<uses-permission android:name=\"android.permission.$P\" />\n    <application#" "$MF"
+            fi
+          done
+          grep -n "uses-permission" "$MF"
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Target-JEE.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Target-JEE-apk
+          path: Target-JEE.apk
+          if-no-files-found: error
